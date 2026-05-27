@@ -6,10 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -60,21 +57,51 @@ public class AdminService {
 
     @Transactional
     public Map<String, Object> insertRecord(String tableName, Map<String, Object> data) {
-        // Экранируем имена колонок двойными кавычками
-        List<String> escapedColumns = data.keySet().stream()
-            .map(column -> "\"" + column + "\"")
-            .collect(Collectors.toList());
-    
-        String columns = String.join(", ", escapedColumns);
-        String placeholders = data.keySet().stream().map(k -> "?").collect(Collectors.joining(", "));
-        String sql = "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ")";
-    
-        System.out.println("SQL: " + sql);
-        System.out.println("Values: " + data.values());
-    
-        jdbcTemplate.update(sql, data.values().toArray());
-    
-        return Map.of("status", "success", "message", "Record inserted into " + tableName);
+        try {
+            // Получаем информацию о колонках, которые являются автоинкрементными
+            String autoColumnsSql = """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+              AND table_name = ? 
+              AND (is_identity = 'YES' 
+                   OR column_default LIKE 'nextval%%'
+                   OR data_type = 'bigserial'
+                   OR data_type = 'serial')
+        """;
+
+            List<String> autoColumns = jdbcTemplate.queryForList(autoColumnsSql, String.class, tableName);
+
+            // Добавляем стандартные колонки, которые не нужно вставлять
+            autoColumns.add("created_at");
+            autoColumns.add("updated_at");
+
+            // Фильтруем данные, убирая автоинкрементные колонки
+            Map<String, Object> filteredData = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                if (!autoColumns.contains(entry.getKey()) && entry.getValue() != null && !"null".equals(entry.getValue())) {
+                    filteredData.put(entry.getKey(), entry.getValue());
+                }
+            }
+
+            if (filteredData.isEmpty()) {
+                return Map.of("status", "error", "message", "No data to insert after removing auto-generated fields");
+            }
+
+            String columns = String.join(", ", filteredData.keySet());
+            String placeholders = String.join(", ", Collections.nCopies(filteredData.size(), "?"));
+            String sql = "INSERT INTO " + tableName + " (" + columns + ") VALUES (" + placeholders + ")";
+
+            System.out.println("SQL: " + sql);
+            System.out.println("Values: " + filteredData.values());
+
+            jdbcTemplate.update(sql, filteredData.values().toArray());
+
+            return Map.of("status", "success", "message", "Record inserted into " + tableName);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Map.of("status", "error", "message", e.getMessage());
+        }
     }
 
     @Transactional

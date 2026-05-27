@@ -92,38 +92,36 @@ public class AnalyticsService {
         return jdbcTemplate.queryForList(sql.toString(), params.toArray());
     }
 
+    public List<Map<String, Object>> getAllFoods() {
+        String sql = """
+        SELECT f.quantity_in_a_conventional_unit, tf.description as type_description, 
+               f.is_it_produced_by_the_zoo, f.description
+        FROM foods f
+        JOIN type_of_foods tf ON f.type_id = tf.id
+        ORDER BY f.id
+    """;
+        return jdbcTemplate.queryForList(sql);
+    }
+
     public List<Map<String, Object>> getExchangeZoos(Integer speciesId) {
         StringBuilder sql = new StringBuilder("""
-            SELECT z.id, z.location, COUNT(DISTINCT ase.animal_id) as animals_sent,
-                   COUNT(DISTINCT are.animal_id) as animals_received
-            FROM zoos z
-            JOIN exchanges e ON z.id = e.zoo_id
-            LEFT JOIN animals_sent ase ON e.id = ase.exchange_id
-            LEFT JOIN animals_recieved are ON e.id = are.exchange_id
-        """);
+        SELECT z.location, COUNT(DISTINCT ase.animal_id) as animals_sent,
+               COUNT(DISTINCT are.animal_id) as animals_received
+        FROM zoos z
+        JOIN exchanges e ON z.id = e.zoo_id
+        LEFT JOIN animals_sent ase ON e.id = ase.exchange_id
+        LEFT JOIN animals_recieved are ON e.id = are.exchange_id
+    """);
 
         if (speciesId != null) {
             sql.append(" LEFT JOIN animals a_sent ON ase.animal_id = a_sent.id");
             sql.append(" LEFT JOIN animals a_rec ON are.animal_id = a_rec.id");
             sql.append(" WHERE a_sent.species_id = ? OR a_rec.species_id = ?");
-            sql.append(" GROUP BY z.id, z.location");
+            sql.append(" GROUP BY z.location");
             return jdbcTemplate.queryForList(sql.toString(), speciesId, speciesId);
         }
 
-        sql.append(" GROUP BY z.id, z.location ORDER BY z.location");
-        return jdbcTemplate.queryForList(sql.toString());
-    }
-
-    public List<Map<String, Object>> getAllFoods(){
-        StringBuilder sql = new StringBuilder("""
-            SELECT f.id as id,
-                f.quantity_in_a_conventional_unit as quantity_in_a_conventional_unit,
-                f.type_id as type_id, tof.description as type_description,
-                f.is_it_produced_by_the_zoo as is_it_produced_by_the_zoo,
-                f.description as description
-            FROM foods f
-            JOIN type_of_foods tof ON f.type_id = tof.id
-        """);
+        sql.append(" GROUP BY z.location ORDER BY z.location");
         return jdbcTemplate.queryForList(sql.toString());
     }
 
